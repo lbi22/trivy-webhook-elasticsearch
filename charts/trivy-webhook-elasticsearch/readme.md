@@ -18,17 +18,17 @@ This application integrates [Trivy](https://github.com/aquasecurity/trivy), a po
 Add the Helm repository:
 
 ```bash
-helm repo add trivy-webhook-aws-security-hub https://csepulveda.github.io/trivy-webhook-aws-security-hub/
+helm repo add trivy-webhook-elasticsearch https://lbi22.github.io/trivy-webhook-elasticsearch/
 ```
 
 Install the Helm chart:
 
 ```bash
-helm install trivy-webhook trivy-webhook-aws-security-hub/trivy-webhook-aws-security-hub \
-  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::xxx:role/trivy-webhook-aws-security-hub-role"
+helm install trivy-webhook trivy-webhook-elasticsearch/trivy-webhook-elasticsearch \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::xxx:role/trivy-webhook-elasticsearch-role"
 ```
 
-- Replace `arn:aws:iam::xxx:role/trivy-webhook-aws-security-hub-role` with your actual IAM role ARN.
+- Replace `arn:aws:iam::xxx:role/trivy-webhook-elasticsearch-role` with your actual IAM role ARN.
 - The IAM role should have permissions to write findings into AWS Security Hub.
 
 ### Explanation:
@@ -42,7 +42,7 @@ helm install trivy-webhook trivy-webhook-aws-security-hub/trivy-webhook-aws-secu
 | Name                                         | Description                                                                                                         | Value                                               |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `replicaCount`                               | Number of secret-sync replicas                                                                                      | `1`                                                 |
-| `image.repository`                           | The repository to use for the secret-sync image.                                                                    | `ghcr.io/csepulveda/trivy-webhook-aws-security-hub` |
+| `image.repository`                           | The repository to use for the secret-sync image.                                                                    | `ghcr.io/lbi22/trivy-webhook-elasticsearch` |
 | `image.pullPolicy`                           | The pull policy to use for the secret-sync image.                                                                   | `IfNotPresent`                                      |
 | `image.tag`                                  | The secret-sync image tag. Defaults to the chart's AppVersion.                                                      | `""`                                                |
 | `imagePullSecrets`                           | A list of image pull secrets for the container image.                                                               | `[]`                                                |
@@ -85,7 +85,7 @@ To send vulnerability reports from the Trivy Operator to the webhook, configure 
 Example:
 
 ```bash
---set operator.webhookBroadcastURL=http://trivy-webhook-aws-security-hub.default/trivy-webhook
+--set operator.webhookBroadcastURL=http://trivy-webhook-elasticsearch.default/trivy-webhook
 ```
 
 This ensures that the Trivy Operator sends its scan results to the Trivy webhook, which will then process and forward them to AWS Security Hub.

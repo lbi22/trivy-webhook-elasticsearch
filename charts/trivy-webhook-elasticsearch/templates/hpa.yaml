@@ -2,14 +2,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "trivy-webhook-aws-security-hub.fullname" . }}
+  name: {{ include "trivy-webhook-elasticsearch.fullname" . }}
   labels:
-    {{- include "trivy-webhook-aws-security-hub.labels" . | nindent 4 }}
+    {{- include "trivy-webhook-elasticsearch.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "trivy-webhook-aws-security-hub.fullname" . }}
+    name: {{ include "trivy-webhook-elasticsearch.fullname" . }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

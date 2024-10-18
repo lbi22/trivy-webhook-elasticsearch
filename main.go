@@ -10,13 +10,10 @@ import (
 	"time"
 
 	"github.com/aquasecurity/trivy-operator/pkg/apis/aquasecurity/v1alpha1"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/securityhub"
-	"github.com/aws/aws-sdk-go-v2/service/securityhub/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/csepulveda/trivy-webhook-aws-security-hub/tools"
+	"github.com/lbi22/trivy-webhook-aws-elasticsearch/tools"
 	"github.com/gorilla/mux"
+	"github.com/elastic/go-elasticsearch/v8"
+    "github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
 type webhook struct {
@@ -104,283 +101,91 @@ func ProcessTrivyWebhook(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func getConfigAuditReportFindings(body []byte) ([]types.AwsSecurityFinding, error) {
-	configAuditReport := &v1alpha1.ConfigAuditReport{}
+func createElasticsearchClient(endpoint, username, password string) (*elasticsearch.Client, error) {
+    cfg := elasticsearch.Config{
+        Addresses: []string{
+            endpoint,
+        },
+        Username: username,
+        Password: password,
+    }
 
-	// Decode JSON
-	err := json.Unmarshal(body, &configAuditReport)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding JSON: %v", err)
-	}
+    es, err := elasticsearch.NewClient(cfg)
+    if err != nil {
+        return nil, err
+    }
 
-	log.Printf("Processing report: %s", configAuditReport.Name)
+    // Ping Elasticsearch to verify connection
+    res, err := es.Ping()
+    if err != nil || res.StatusCode != 200 {
+        return nil, fmt.Errorf("Failed to connect to Elasticsearch: %v", err)
+    }
 
-	// Prepare findings for AWS Security Hub BatchImportFindings API
-	var findings []types.AwsSecurityFinding
-
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return nil, fmt.Errorf("unable to load SDK config: %v", err)
-	}
-
-	// Create AWS STS clients
-	stsClient := sts.NewFromConfig(cfg)
-	callerIdentity, err := stsClient.GetCallerIdentity(context.TODO(), &sts.GetCallerIdentityInput{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get caller identity: %w", err)
-	}
-
-	// Prepare variables
-	AWSAccountID := aws.ToString(callerIdentity.Account)
-	AWSRegion := cfg.Region
-	ProductArn := fmt.Sprintf("arn:aws:securityhub:%s::product/aquasecurity/aquasecurity", AWSRegion)
-	Name := fmt.Sprintf("%s/%s", configAuditReport.OwnerReferences[0].Kind, configAuditReport.OwnerReferences[0].Name)
-
-	// Handle Checks
-	for _, check := range configAuditReport.Report.Checks {
-		severity := check.Severity
-		if severity == "UNKNOWN" {
-			severity = "INFORMATIONAL"
-		}
-
-		// Truncate description if too long
-		description := check.Description
-		if len(description) > 512 {
-			description = description[:512] + "..."
-		}
-
-		findings = append(findings, types.AwsSecurityFinding{
-			SchemaVersion: aws.String("2018-10-08"),
-			Id:            aws.String(fmt.Sprintf("%s-%s", check.ID, Name)),
-			ProductArn:    aws.String(ProductArn),
-			GeneratorId:   aws.String(fmt.Sprintf("Trivy/%s", check.ID)),
-			AwsAccountId:  aws.String(AWSAccountID),
-			Types:         []string{"Software and Configuration Checks"},
-			CreatedAt:     aws.String(time.Now().Format(time.RFC3339)),
-			UpdatedAt:     aws.String(time.Now().Format(time.RFC3339)),
-			Severity:      &types.Severity{Label: types.SeverityLabel(severity)},
-			Title:         aws.String(fmt.Sprintf("Trivy found a misconfiguration in %s: %s", Name, check.Title)),
-			Description:   aws.String(description),
-			Remediation: &types.Remediation{
-				Recommendation: &types.Recommendation{
-					Text: aws.String(check.Remediation),
-				},
-			},
-			ProductFields: map[string]string{"Product Name": "Trivy"},
-			Resources: []types.Resource{
-				{
-					Type:      aws.String("Other"),
-					Id:        aws.String(Name),
-					Partition: types.PartitionAws,
-					Region:    aws.String(AWSRegion),
-					Details: &types.ResourceDetails{
-						Other: map[string]string{
-							"Message": check.Messages[0],
-						},
-					},
-				},
-			},
-			RecordState: types.RecordStateActive,
-		})
-	}
-
-	return findings, nil
+    return es, nil
 }
 
-func getInfraAssessmentReport(body []byte) ([]types.AwsSecurityFinding, error) {
-	infraAssessmentReport := &v1alpha1.InfraAssessmentReport{}
+func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch.Client) {
+    var report v1alpha1.VulnerabilityReport
+    if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
+    }
 
-	// Decode JSON
-	err := json.Unmarshal(body, &infraAssessmentReport)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding JSON: %v", err)
-	}
+    // Convert the report to JSON for Elasticsearch
+    reportData, err := json.Marshal(report)
+    if err != nil {
+        http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
+        return
+    }
 
-	log.Printf("Processing report: %s", infraAssessmentReport.Name)
+    // Index the report in Elasticsearch
+    req := esapi.IndexRequest{
+        Index:      "trivy-vulnerabilities",
+        DocumentID: fmt.Sprintf("%s-%s", report.Namespace, report.Name),
+        Body:       bytes.NewReader(reportData),
+        Refresh:    "true",
+    }
 
-	// by the moment, only print the report for debugging purposes
-	reportJSON, err := json.MarshalIndent(infraAssessmentReport, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("error encoding JSON: %v", err)
-	}
-	log.Printf("Report: %s", reportJSON)
+    res, err := req.Do(context.Background(), es)
+    if err != nil || res.IsError() {
+        http.Error(w, "Failed to index document", http.StatusInternalServerError)
+        return
+    }
 
-	// Prepare findings for AWS Security Hub BatchImportFindings API
-	var findings []types.AwsSecurityFinding
-
-	return findings, nil
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Report indexed successfully"))
 }
 
-func getClusterComplianceReport(body []byte) ([]types.AwsSecurityFinding, error) {
-	clusterComplianceReport := &v1alpha1.ClusterComplianceReport{}
-
-	// Decode JSON
-	err := json.Unmarshal(body, &clusterComplianceReport)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding JSON: %v", err)
-	}
-
-	log.Printf("Processing report: %s", clusterComplianceReport.Name)
-
-	// by the moment, only print the report for debugging purposes
-	reportJSON, err := json.MarshalIndent(clusterComplianceReport, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("error encoding JSON: %v", err)
-	}
-	log.Printf("Report: %s", reportJSON)
-
-	// Prepare findings for AWS Security Hub BatchImportFindings API
-	var findings []types.AwsSecurityFinding
-
-	return findings, nil
-}
-
-func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, error) {
-	vulnerabilityReport := &v1alpha1.VulnerabilityReport{}
-
-	// Decode JSON
-	err := json.Unmarshal(body, &vulnerabilityReport)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding JSON: %v", err)
-	}
-
-	log.Printf("Processing report: %s", vulnerabilityReport.Name)
-	// Load AWS SDK config
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return nil, fmt.Errorf("unable to load SDK config: %v", err)
-	}
-
-	// Create AWS STS clients
-	stsClient := sts.NewFromConfig(cfg)
-	callerIdentity, err := stsClient.GetCallerIdentity(context.TODO(), &sts.GetCallerIdentityInput{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get caller identity: %w", err)
-	}
-
-	// Prepare variables
-	AWSAccountID := aws.ToString(callerIdentity.Account)
-	AWSRegion := cfg.Region
-	ProductArn := fmt.Sprintf("arn:aws:securityhub:%s::product/aquasecurity/aquasecurity", AWSRegion)
-	Container := vulnerabilityReport.Labels["trivy-operator.container.name"]
-	Registry := vulnerabilityReport.Report.Registry.Server
-	Repository := vulnerabilityReport.Report.Artifact.Repository
-	Digest := vulnerabilityReport.Report.Artifact.Digest
-	FullImageName := fmt.Sprintf("%s/%s:%s", Registry, Repository, Digest)
-	ImageName := fmt.Sprintf("%s/%s", Registry, Repository)
-
-	// Prepare findings for AWS Security Hub BatchImportFindings API
-	var findings []types.AwsSecurityFinding
-
-	// Handle Vulnerabilities
-	for _, vulnerabilities := range vulnerabilityReport.Report.Vulnerabilities {
-		severity := vulnerabilities.Severity
-		if severity == "UNKNOWN" {
-			severity = "INFORMATIONAL"
-		}
-
-		// Truncate description if too long
-		description := vulnerabilities.Description
-		if len(description) > 512 {
-			description = description[:512] + "..."
-		}
-
-		findings = append(findings, types.AwsSecurityFinding{
-			SchemaVersion: aws.String("2018-10-08"),
-			Id:            aws.String(fmt.Sprintf("%s-%s", FullImageName, vulnerabilities.VulnerabilityID)),
-			ProductArn:    aws.String(ProductArn),
-			GeneratorId:   aws.String(fmt.Sprintf("Trivy/%s", vulnerabilities.VulnerabilityID)),
-			AwsAccountId:  aws.String(AWSAccountID),
-			Types:         []string{"Software and Configuration Checks/Vulnerabilities/CVE"},
-			CreatedAt:     aws.String(time.Now().Format(time.RFC3339)),
-			UpdatedAt:     aws.String(time.Now().Format(time.RFC3339)),
-			Severity:      &types.Severity{Label: types.SeverityLabel(severity)},
-			Title:         aws.String(fmt.Sprintf("Trivy found a vulnerability in %s/%s related to %s", ImageName, Container, vulnerabilities.VulnerabilityID)),
-			Description:   aws.String(description),
-			Remediation: &types.Remediation{
-				Recommendation: &types.Recommendation{
-					Text: aws.String("Upgrade to version " + vulnerabilities.FixedVersion),
-					Url:  aws.String(vulnerabilities.PrimaryLink),
-				},
-			},
-			ProductFields: map[string]string{"Product Name": "Trivy"},
-			Resources: []types.Resource{
-				{
-					Type:      aws.String("Container"),
-					Id:        aws.String(ImageName),
-					Partition: types.PartitionAws,
-					Region:    aws.String(AWSRegion),
-					Details: &types.ResourceDetails{
-						Other: map[string]string{
-							"Container Image":   ImageName,
-							"CVE ID":            vulnerabilities.VulnerabilityID,
-							"CVE Title":         vulnerabilities.Title,
-							"PkgName":           vulnerabilities.Resource,
-							"Installed Package": vulnerabilities.InstalledVersion,
-							"Patched Package":   vulnerabilities.FixedVersion,
-							"NvdCvssScoreV3":    fmt.Sprintf("%f", tools.GetVulnScore(vulnerabilities)),
-							"NvdCvssVectorV3":   "",
-						},
-					},
-				},
-			},
-			RecordState: types.RecordStateActive,
-		})
-	}
-
-	return findings, err
-}
-
-// Import findings to AWS Security Hub in batches of 100
-func importFindingsToSecurityHub(findings []types.AwsSecurityFinding) error {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return fmt.Errorf("unable to load SDK config: %v", err)
-	}
-
-	client := securityhub.NewFromConfig(cfg)
-
-	batchSize := 100
-	for i := 0; i < len(findings); i += batchSize {
-		end := i + batchSize
-		if end > len(findings) {
-			end = len(findings)
-		}
-
-		batch := findings[i:end]
-
-		input := &securityhub.BatchImportFindingsInput{
-			Findings: batch,
-		}
-
-		// Call BatchImportFindings API
-		_, err := client.BatchImportFindings(context.TODO(), input)
-		if err != nil {
-			return fmt.Errorf("error importing findings to Security Hub: %v", err)
-		}
-	}
-
-	log.Printf("%d Findings imported to Security Hub", len(findings))
-	return nil
-}
 
 func main() {
-	r := mux.NewRouter()
+    // Load Elasticsearch configuration from environment variables
+    endpoint := os.Getenv("ELASTICSEARCH_ENDPOINT")
+    username := os.Getenv("ELASTICSEARCH_USERNAME")
+    password := os.Getenv("ELASTICSEARCH_PASSWORD")
 
-	// Define route
-	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte("OK"))
-		if err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
+    // Create Elasticsearch client
+    es, err := createElasticsearchClient(endpoint, username, password)
+    if err != nil {
+        log.Fatalf("Error creating Elasticsearch client: %s", err)
+    }
 
-	}).Methods("GET")
+    // Create a new router
+    r := mux.NewRouter()
 
-	r.HandleFunc("/trivy-webhook", ProcessTrivyWebhook).Methods("POST")
+    // Define the webhook route
+    r.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+        handleTrivyReport(w, r, es) // Pass Elasticsearch client to handler
+    }).Methods("POST")
 
-	// Start the server
-	port := ":8080"
-	fmt.Println("Starting server on port", port)
-	log.Fatal(http.ListenAndServe(port, r))
+    // Start the server
+    srv := &http.Server{
+        Handler:      r,
+        Addr:         ":8080",
+        WriteTimeout: 15 * time.Second,
+        ReadTimeout:  15 * time.Second,
+    }
+
+    fmt.Println("Server is listening on :8080")
+    log.Fatal(srv.ListenAndServe())
 }
+

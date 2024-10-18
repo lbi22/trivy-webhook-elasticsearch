@@ -10,7 +10,7 @@ replicaCount: 1
 ## @param image.tag The secret-sync image tag. Defaults to the chart's AppVersion.
 ## @description Configures the container image details including repository, tag, and pull policy.
 image:
-  repository: ghcr.io/csepulveda/trivy-webhook-aws-security-hub
+  repository: ghcr.io/lbi22/trivy-webhook-elasticsearch
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -41,6 +41,12 @@ serviceAccount:
 ## @param podAnnotations [object] Add extra annotations to the secret-sync pod(s).
 ## @description Add custom annotations to the pods running the secret-sync service.
 podAnnotations: {}
+
+elasticsearch:
+  endpoint: "http://your-elasticsearch-endpoint"
+  username: "your-username"
+  password: "your-password"
+
 
 ## @param podLabels [object] Add custom labels to the secret-sync pod(s).
 ## @description Add custom labels to the pods running the secret-sync service.

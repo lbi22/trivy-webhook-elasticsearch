@@ -1,4 +1,4 @@
-module github.com/csepulveda/trivy-webhook-aws-security-hub
+module github.com/lbi22/trivy-webhook-elasticsearch
 
 go 1.22.4
 

@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "trivy-webhook-aws-security-hub.fullname" . }}
+  name: {{ include "trivy-webhook-elasticsearch.fullname" . }}
   labels:
-    {{- include "trivy-webhook-aws-security-hub.labels" . | nindent 4 }}
+    {{- include "trivy-webhook-elasticsearch.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "trivy-webhook-aws-security-hub.selectorLabels" . | nindent 6 }}
+      {{- include "trivy-webhook-elasticsearch.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -18,7 +18,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "trivy-webhook-aws-security-hub.labels" . | nindent 8 }}
+        {{- include "trivy-webhook-elasticsearch.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -27,7 +27,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "trivy-webhook-aws-security-hub.serviceAccountName" . }}
+      serviceAccountName: {{ include "trivy-webhook-elasticsearch.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -46,6 +46,13 @@ spec:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: ELASTICSEARCH_ENDPOINT
+              value: {{ .Values.elasticsearch.endpoint | quote }}
+            - name: ELASTICSEARCH_USERNAME
+              value: {{ .Values.elasticsearch.username | quote }}
+            - name: ELASTICSEARCH_PASSWORD
+              value: {{ .Values.elasticsearch.password | quote }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}

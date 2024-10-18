@@ -28,8 +28,8 @@ This application processes vulnerability reports from Trivy, a vulnerability sca
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/csepulveda/trivy-webhook-aws-security-hub.git
-   cd trivy-webhook-aws-security-hub
+   git clone https://github.com/lbi22/trivy-webhook-elasticsearch.git
+   cd trivy-webhook-elasticsearch
    ```
 
 2. **Build the application**:
@@ -38,7 +38,7 @@ This application processes vulnerability reports from Trivy, a vulnerability sca
 
    ```bash
    go mod tidy
-   go build -o trivy-webhook-aws-security-hub
+   go build -o trivy-webhook-elasticsearch
    ```
 
 3. **Run the application**:
@@ -46,7 +46,7 @@ This application processes vulnerability reports from Trivy, a vulnerability sca
    You can start the application locally:
 
    ```bash
-   ./trivy-webhook-aws-security-hub
+   ./trivy-webhook-elasticsearch
    ```
 
    The server will start and listen on port `8080`.
@@ -121,7 +121,7 @@ This application includes a Helm Chart to simplify deployment to Kubernetes. You
 2. Use the provided chart to install the application:
 
    ```bash
-   helm install trivy-webhook charts/trivy-webhook-aws-security-hub
+   helm install trivy-webhook charts/trivy-webhook-elasticsearch
    ```
 
 ## Contributing
