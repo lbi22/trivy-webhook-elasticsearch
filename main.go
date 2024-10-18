@@ -10,7 +10,6 @@ import (
 	"time"
 	"bytes"
 	"os"
-	"es"
 
 	"github.com/aquasecurity/trivy-operator/pkg/apis/aquasecurity/v1alpha1"
 	"github.com/gorilla/mux"
