@@ -23,47 +23,48 @@ type webhook struct {
 }
 
 // ProcessTrivyWebhook processes incoming vulnerability reports
-func ProcessTrivyWebhook(w http.ResponseWriter, r *http.Request) {
-    var report v1alpha1.VulnerabilityReport
+// func ProcessTrivyWebhook(w http.ResponseWriter, r *http.Request, es *elasticsearch.Client) {
+//     var report v1alpha1.VulnerabilityReport
 
-    // Read and validate the request body
-    body, err := io.ReadAll(r.Body)
-    if err != nil || len(body) == 0 {
-        http.Error(w, "Invalid request body", http.StatusBadRequest)
-        return
-    }
+//     // Read and validate the request body
+//     body, err := io.ReadAll(r.Body)
+//     if err != nil || len(body) == 0 {
+//         http.Error(w, "Invalid request body", http.StatusBadRequest)
+//         return
+//     }
 
-    // Decode JSON
-    err = json.Unmarshal(body, &report)
-    if err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
-        return
-    }
+//     // Decode JSON
+//     err = json.Unmarshal(body, &report)
+//     if err != nil {
+//         http.Error(w, "Invalid JSON", http.StatusBadRequest)
+//         return
+//     }
 
-    // Convert the report to JSON for Elasticsearch
-    reportData, err := json.Marshal(report)
-    if err != nil {
-        http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
-        return
-    }
+//     // Convert the report to JSON for Elasticsearch
+//     reportData, err := json.Marshal(report)
+//     if err != nil {
+//         http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
+//         return
+//     }
 
-    // Index the report in Elasticsearch
-    req := esapi.IndexRequest{
-        Index:      "trivy-vulnerabilities",
-        DocumentID: fmt.Sprintf("%s-%s", report.Namespace, report.Name),
-        Body:       bytes.NewReader(reportData),
-        Refresh:    "true",
-    }
+//     // Index the report in Elasticsearch
+//     req := esapi.IndexRequest{
+//         Index:      "trivy-vulnerabilities",
+//         DocumentID: fmt.Sprintf("%s-%s", report.Namespace, report.Name),
+//         Body:       bytes.NewReader(reportData),
+//         Refresh:    "true",
+//     }
 
-    res, err := req.Do(context.Background(), es)
-    if err != nil || res.IsError() {
-        http.Error(w, "Failed to index document", http.StatusInternalServerError)
-        return
-    }
+//     res, err := req.Do(context.Background(), es)
+//     if err != nil || res.IsError() {
+//         http.Error(w, "Failed to index document", http.StatusInternalServerError)
+//         return
+//     }
 
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Report indexed successfully"))
-}
+//     w.WriteHeader(http.StatusOK)
+//     w.Write([]byte("Report indexed successfully"))
+// }
+
 
 
 func createElasticsearchClient(endpoint, username, password string) (*elasticsearch.Client, error) {
@@ -148,9 +149,9 @@ func main() {
     // Create a new router
     r := mux.NewRouter()
 
-    // Pass Elasticsearch client to the webhook handler
+    // Use handleTrivyReport as the handler and pass the Elasticsearch client
     r.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
-        handleTrivyReport(w, r, es) // Pass the 'es' client here
+        handleTrivyReport(w, r, es)
     }).Methods("POST")
 
     // Start the server
@@ -164,4 +165,3 @@ func main() {
     fmt.Println("Server is listening on :8080")
     log.Fatal(srv.ListenAndServe())
 }
-
