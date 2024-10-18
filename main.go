@@ -162,6 +162,13 @@ func main() {
         ReadTimeout:  15 * time.Second,
     }
 
+    r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("OK"))
+		if err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
+
     fmt.Println("Server is listening on :8080")
     log.Fatal(srv.ListenAndServe())
 }
