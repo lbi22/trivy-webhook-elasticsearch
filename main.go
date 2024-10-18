@@ -10,9 +10,9 @@ import (
 	"time"
 	"bytes"
 	"os"
-	
+	"es"
+
 	"github.com/aquasecurity/trivy-operator/pkg/apis/aquasecurity/v1alpha1"
-	"github.com/lbi22/trivy-webhook-elasticsearch/tools"
 	"github.com/gorilla/mux"
 	"github.com/elastic/go-elasticsearch/v8"
     "github.com/elastic/go-elasticsearch/v8/esapi"
