@@ -33,7 +33,7 @@ fullnameOverride: ""
 ## @param serviceAccount.name Name of the service account to use. If not set and create is true, a name is generated using the fullname template.
 ## @description Specifies whether to create a service account, along with any annotations or a custom name.
 serviceAccount:
-  create: true
+  create: false
   automount: true
   annotations: {}
   name: ""

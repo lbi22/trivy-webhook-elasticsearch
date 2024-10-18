@@ -1,28 +1,27 @@
+# Trivy Webhook Elasticsearch
 
-# Trivy Webhook AWS Security Hub
-
-This application processes vulnerability reports from Trivy, a vulnerability scanning tool for containers, and imports the findings into AWS Security Hub. It acts as a webhook receiver that listens for vulnerability reports sent by Trivy and processes them before forwarding the results to AWS Security Hub.
+This application processes vulnerability reports from Trivy, a vulnerability scanning tool for containers, and imports the findings into an Elasticsearch index. It acts as a webhook receiver that listens for vulnerability reports sent by Trivy and processes them before forwarding the results to Elasticsearch.
 
 ## Features
 
 - Receives vulnerability reports via an HTTP POST request.
-- Supports importing CVE findings into AWS Security Hub.
+- Supports importing CVE findings into an Elasticsearch index.
 - Designed for integration with container image scanning.
 - Logs and reports errors for easier troubleshooting.
 
 ## How It Works
 
-1. **Vulnerability Report**: The application listens for incoming vulnerability reports in JSON format from Trivy via a `/trivy-webhook` endpoint.
+1. **Vulnerability Report**: The application listens for incoming vulnerability reports in JSON format from Trivy via a `/webhook` endpoint.
 2. **Validation**: The incoming report is validated to ensure it's of type `VulnerabilityReport`, and only then are the vulnerabilities processed.
-3. **AWS Security Hub Integration**: Vulnerabilities are imported as security findings into AWS Security Hub.
+3. **Elasticsearch Integration**: Vulnerabilities are indexed into the specified Elasticsearch index for further analysis and visualization.
 4. **Health Check**: The `/healthz` endpoint provides a simple health check for the application.
 
 ## Prerequisites
 
-- **AWS Account**: This application uses AWS Security Hub to store and manage security findings, so you must have an active AWS account and the necessary permissions.
+- **Elasticsearch**: You must have access to an Elasticsearch instance with the appropriate credentials (username, password, and endpoint).
 - **Trivy**: You must set up Trivy to scan container images and send reports to the webhook endpoint.
 - **Go**: The application is written in Go, so you'll need Go installed to build and run it.
-  
+
 ## Setup and Installation
 
 1. **Clone the repository**:
@@ -30,51 +29,46 @@ This application processes vulnerability reports from Trivy, a vulnerability sca
    ```bash
    git clone https://github.com/lbi22/trivy-webhook-elasticsearch.git
    cd trivy-webhook-elasticsearch
-   ```
 
 2. **Build the application**:
 
    Make sure Go is installed and set up correctly:
-
    ```bash
-   go mod tidy
-   go build -o trivy-webhook-elasticsearch
-   ```
+   git clone https://github.com/lbi22/trivy-webhook-elasticsearch.git
+   cd trivy-webhook-elasticsearch
 
 3. **Run the application**:
 
-   You can start the application locally:
-
-   ```bash
-   ./trivy-webhook-elasticsearch
-   ```
-
-   The server will start and listen on port `8080`.
+    You can start the application locally:
+    ```bash
+    Copy code
+    ./trivy-webhook-elasticsearch
+    The server will start and listen on port 8080.
 
 4. **Set up Trivy**:
 
-   Configure Trivy to send vulnerability reports to the `/trivy-webhook` endpoint of the running application.
+    Configure Trivy to send vulnerability reports to the /webhook endpoint of the running application.
 
-   Example Trivy command:
+    Example Trivy command:
 
-   ```bash
-   trivy image --format json --output result.json <image>
-   curl -X POST -H "Content-Type: application/json" --data @result.json http://localhost:8080/trivy-webhook
-   ```
+    ```bash
+    Copy code
+    trivy image --format json --output result.json <image>
+    curl -X POST -H "Content-Type: application/json" --data @result.json http://localhost:8080/webhook
 
 ## Environment Variables
 
-You can configure AWS credentials using standard AWS environment variables or by setting up the AWS SDK on your local machine or server.
+You can configure Elasticsearch credentials using the following environment variables:
 
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_REGION`
+- `ELASTICSEARCH_ENDPOINT`: The Elasticsearch endpoint.
+- `ELASTICSEARCH_USERNAME`: The Elasticsearch username.
+- `ELASTICSEARCH_PASSWORD`: The Elasticsearch password.
 
-These are automatically loaded by the AWS SDK for Go.
+These are automatically loaded by the Go application to connect to Elasticsearch.
 
 ## API Endpoints
 
-- **POST** `/trivy-webhook`: Receives vulnerability reports in JSON format. Only processes reports of type `VulnerabilityReport` and imports CVE findings to AWS Security Hub.
+- **POST** `/webhook`: Receives vulnerability reports in JSON format. Only processes reports of type `VulnerabilityReport` and indexes CVE findings to Elasticsearch.
 - **GET** `/healthz`: Health check endpoint that returns a simple `OK` response.
 
 ## Example Vulnerability Report (from Trivy)
@@ -110,7 +104,6 @@ These are automatically loaded by the AWS SDK for Go.
   }
 }
 ```
-
 ## Helm Chart
 
 This application includes a Helm Chart to simplify deployment to Kubernetes. You can find the chart in the `charts/` directory.
@@ -122,7 +115,6 @@ This application includes a Helm Chart to simplify deployment to Kubernetes. You
 
    ```bash
    helm install trivy-webhook charts/trivy-webhook-elasticsearch
-   ```
 
 ## Contributing
 
@@ -137,3 +129,4 @@ We welcome contributions! To contribute, follow these steps:
 ## License
 
 This project is licensed under the GNU General Public License v3.0 License - see the [LICENSE](LICENSE) file for details.
+
