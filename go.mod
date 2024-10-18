@@ -3,12 +3,9 @@ module github.com/lbi22/trivy-webhook-elasticsearch
 go 1.22.4
 
 require (
-	github.com/aquasecurity/trivy-operator v0.22.0
-	github.com/aws/aws-sdk-go-v2 v1.30.5
-	github.com/aws/aws-sdk-go-v2/config v1.27.33
-	github.com/aws/aws-sdk-go-v2/service/securityhub v1.52.2
-	github.com/aws/aws-sdk-go-v2/service/sts v1.30.7
-	github.com/gorilla/mux v1.8.1
+    github.com/aquasecurity/trivy-operator v0.22.0
+    github.com/gorilla/mux v1.8.1
+    github.com/elastic/go-elasticsearch/v8 v8.0.0 
 )
 
 require (
