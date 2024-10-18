@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"time"
-
+	"bytes"
+	"os"
+	
 	"github.com/aquasecurity/trivy-operator/pkg/apis/aquasecurity/v1alpha1"
 	"github.com/lbi22/trivy-webhook-elasticsearch/tools"
 	"github.com/gorilla/mux"
@@ -23,83 +25,47 @@ type webhook struct {
 
 // ProcessTrivyWebhook processes incoming vulnerability reports
 func ProcessTrivyWebhook(w http.ResponseWriter, r *http.Request) {
-	var report webhook
+    var report v1alpha1.VulnerabilityReport
 
-	// Read request body
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Error reading request body", http.StatusBadRequest)
-		log.Printf("Error reading request body: %v", err)
-		return
-	}
+    // Read and validate the request body
+    body, err := io.ReadAll(r.Body)
+    if err != nil || len(body) == 0 {
+        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
+    }
 
-	// Validate request body is not empty
-	if len(body) == 0 {
-		http.Error(w, "Empty request body", http.StatusBadRequest)
-		log.Printf("Empty request body")
-		return
-	}
+    // Decode JSON
+    err = json.Unmarshal(body, &report)
+    if err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
 
-	// Decode JSON
-	err = json.Unmarshal(body, &report)
-	if err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		log.Printf("Error decoding JSON: %v", err)
-		return
-	}
+    // Convert the report to JSON for Elasticsearch
+    reportData, err := json.Marshal(report)
+    if err != nil {
+        http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
+        return
+    }
 
-	var findings []types.AwsSecurityFinding
-	switch report.Kind {
-	case "ConfigAuditReport":
-		findings, err = getConfigAuditReportFindings(body)
-		if err != nil {
-			http.Error(w, "Error processing report", http.StatusInternalServerError)
-			log.Printf("Error processing report: %v", err)
-			return
-		}
-	case "InfraAssessmentReport":
-		findings, err = getInfraAssessmentReport(body)
-		if err != nil {
-			http.Error(w, "Error processing report", http.StatusInternalServerError)
-			log.Printf("Error processing report: %v", err)
-			return
-		}
-	case "ClusterComplianceReport":
-		findings, err = getClusterComplianceReport(body)
-		if err != nil {
-			http.Error(w, "Error processing report", http.StatusInternalServerError)
-			log.Printf("Error processing report: %v", err)
-			return
-		}
-	case "VulnerabilityReport":
-		findings, err = getVulnerabilityReportFindings(body)
-		if err != nil {
-			http.Error(w, "Error processing report", http.StatusInternalServerError)
-			log.Printf("Error processing report: %v", err)
-			return
-		}
-	default: // Unknown report type
-		http.Error(w, "unknown report type", http.StatusBadRequest)
-		log.Printf("unknown report type: %s", report.Kind)
-		return
-	}
+    // Index the report in Elasticsearch
+    req := esapi.IndexRequest{
+        Index:      "trivy-vulnerabilities",
+        DocumentID: fmt.Sprintf("%s-%s", report.Namespace, report.Name),
+        Body:       bytes.NewReader(reportData),
+        Refresh:    "true",
+    }
 
-	//send findings to security hub
-	err = importFindingsToSecurityHub(findings)
-	if err != nil {
-		http.Error(w, "Error importing findings to Security Hub", http.StatusInternalServerError)
-		log.Printf("Error importing findings to Security Hub: %v", err)
-		return
-	}
+    res, err := req.Do(context.Background(), es)
+    if err != nil || res.IsError() {
+        http.Error(w, "Failed to index document", http.StatusInternalServerError)
+        return
+    }
 
-	// Return a success response
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write([]byte("Vulnerabilities processed and imported to Security Hub"))
-	if err != nil {
-		log.Printf("Error writing response: %v", err)
-	}
-
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Report indexed successfully"))
 }
+
 
 func createElasticsearchClient(endpoint, username, password string) (*elasticsearch.Client, error) {
     cfg := elasticsearch.Config{
