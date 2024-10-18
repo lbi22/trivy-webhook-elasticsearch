@@ -169,6 +169,8 @@ func main() {
 			log.Printf("Error writing response: %v", err)
 		}
 
+	}).Methods("GET")
+
     fmt.Println("Server is listening on :8080")
     log.Fatal(srv.ListenAndServe())
 }
