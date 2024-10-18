@@ -91,8 +91,18 @@ func createElasticsearchClient(endpoint, username, password string) (*elasticsea
 
 func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch.Client) {
     var report v1alpha1.VulnerabilityReport
-    if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+
+    // Read and validate the request body
+    body, err := io.ReadAll(r.Body)
+    if err != nil || len(body) == 0 {
         http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
+    }
+
+    // Decode JSON
+    err = json.Unmarshal(body, &report)
+    if err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
         return
     }
 
@@ -122,6 +132,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 }
 
 
+
 func main() {
     // Load Elasticsearch configuration from environment variables
     endpoint := os.Getenv("ELASTICSEARCH_ENDPOINT")
@@ -137,9 +148,9 @@ func main() {
     // Create a new router
     r := mux.NewRouter()
 
-    // Define the webhook route
+    // Pass Elasticsearch client to the webhook handler
     r.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
-        handleTrivyReport(w, r, es) // Pass Elasticsearch client to handler
+        handleTrivyReport(w, r, es) // Pass the 'es' client here
     }).Methods("POST")
 
     // Start the server
