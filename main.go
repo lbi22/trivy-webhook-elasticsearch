@@ -44,18 +44,28 @@ func createElasticsearchClient(endpoint, username, password string) (*elasticsea
     return es, nil
 }
 
-// Remove invalid fields with only dots from the report
-func removeInvalidFields(data map[string]interface{}) {
-    // Traverse through nested fields and remove keys that are only dots (".")
-    for key, value := range data {
-        if key == "." {
-            delete(data, key)
-            continue
+// Remove invalid fields with only dots (".") from the report recursively
+func removeInvalidFields(data interface{}) {
+    switch v := data.(type) {
+    case map[string]interface{}:
+        keysToDelete := []string{} // List of keys to delete
+        // Traverse through the map and identify keys with only dots
+        for key, value := range v {
+            if key == "." {
+                keysToDelete = append(keysToDelete, key)
+            } else {
+                // Recursively process nested maps or arrays
+                removeInvalidFields(value)
+            }
         }
-
-        // Recursively process nested maps
-        if nestedMap, ok := value.(map[string]interface{}); ok {
-            removeInvalidFields(nestedMap)
+        // Delete the invalid keys after traversal
+        for _, key := range keysToDelete {
+            delete(v, key)
+        }
+    case []interface{}:
+        // Handle arrays of values (which could contain nested maps)
+        for _, item := range v {
+            removeInvalidFields(item)
         }
     }
 }
