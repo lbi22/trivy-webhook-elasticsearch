@@ -44,6 +44,23 @@ func createElasticsearchClient(endpoint, username, password string) (*elasticsea
     return es, nil
 }
 
+// Remove invalid fields with only dots from the report
+func removeInvalidFields(data map[string]interface{}) {
+    // Traverse through nested fields and remove keys that are only dots (".")
+    for key, value := range data {
+        if key == "." {
+            delete(data, key)
+            continue
+        }
+
+        // Recursively process nested maps
+        if nestedMap, ok := value.(map[string]interface{}); ok {
+            removeInvalidFields(nestedMap)
+        }
+    }
+}
+
+
 // Function to handle incoming vulnerability reports and log ingestion process
 func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch.Client) {
     log.Println("Received a request at /webhook")
@@ -69,6 +86,9 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     }
 
     log.Printf("Ingesting vulnerability report: %v", report)
+
+    // Clean up invalid fields
+    removeInvalidFields(report)
 
     // Convert the report to JSON for Elasticsearch
     reportData, err := json.Marshal(report)
