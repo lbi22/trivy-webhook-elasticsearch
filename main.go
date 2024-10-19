@@ -46,15 +46,19 @@ func createElasticsearchClient(endpoint, username, password string) (*elasticsea
 
 // Function to handle incoming vulnerability reports and log ingestion process
 func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch.Client) {
+    log.Println("Received a request at /webhook")
+
     var report map[string]interface{}
 
     // Read and validate the request body
     body, err := io.ReadAll(r.Body)
     if err != nil || len(body) == 0 {
-        log.Printf("Invalid request body: %v", err)
+        log.Printf("Invalid request body or empty: %v", err)
         http.Error(w, "Invalid request body", http.StatusBadRequest)
         return
     }
+
+    log.Println("Request body received successfully")
 
     // Decode JSON
     err = json.Unmarshal(body, &report)
@@ -64,7 +68,6 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
-    // Log the ingestion of the report
     log.Printf("Ingesting vulnerability report: %v", report)
 
     // Convert the report to JSON for Elasticsearch
@@ -75,6 +78,8 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
+    log.Printf("Serialized report data: %s", string(reportData))
+
     // Index the report in Elasticsearch
     req := esapi.IndexRequest{
         Index:      "trivy-vulnerabilities",
@@ -83,19 +88,21 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         Refresh:    "true",
     }
 
+    log.Println("Attempting to index the report into Elasticsearch")
+
     res, err := req.Do(context.Background(), es)
     if err != nil || res.IsError() {
-        log.Printf("Failed to index document in Elasticsearch: %v", err)
+        log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
         http.Error(w, "Failed to index document", http.StatusInternalServerError)
         return
     }
 
-    // Log successful indexing
     log.Println("Successfully pushed the vulnerability report to Elasticsearch")
 
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
+
 
 func main() {
     // Load Elasticsearch configuration from environment variables
