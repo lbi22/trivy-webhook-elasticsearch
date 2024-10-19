@@ -1,72 +1,22 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"time"
-	"bytes"
-	"os"
+    "context"
+    "encoding/json"
+    "fmt"
+    "io"
+    "log"
+    "net/http"
+    "os"
+    "bytes"
+    "time"
 
-	"github.com/aquasecurity/trivy-operator/pkg/apis/aquasecurity/v1alpha1"
-	"github.com/gorilla/mux"
-	"github.com/elastic/go-elasticsearch/v8"
+    "github.com/gorilla/mux"
+    "github.com/elastic/go-elasticsearch/v8"
     "github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-type webhook struct {
-	Kind       string `json:"kind"`
-	APIVersion string `json:"apiVersion"`
-}
-
-// ProcessTrivyWebhook processes incoming vulnerability reports
-// func ProcessTrivyWebhook(w http.ResponseWriter, r *http.Request, es *elasticsearch.Client) {
-//     var report v1alpha1.VulnerabilityReport
-
-//     // Read and validate the request body
-//     body, err := io.ReadAll(r.Body)
-//     if err != nil || len(body) == 0 {
-//         http.Error(w, "Invalid request body", http.StatusBadRequest)
-//         return
-//     }
-
-//     // Decode JSON
-//     err = json.Unmarshal(body, &report)
-//     if err != nil {
-//         http.Error(w, "Invalid JSON", http.StatusBadRequest)
-//         return
-//     }
-
-//     // Convert the report to JSON for Elasticsearch
-//     reportData, err := json.Marshal(report)
-//     if err != nil {
-//         http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
-//         return
-//     }
-
-//     // Index the report in Elasticsearch
-//     req := esapi.IndexRequest{
-//         Index:      "trivy-vulnerabilities",
-//         DocumentID: fmt.Sprintf("%s-%s", report.Namespace, report.Name),
-//         Body:       bytes.NewReader(reportData),
-//         Refresh:    "true",
-//     }
-
-//     res, err := req.Do(context.Background(), es)
-//     if err != nil || res.IsError() {
-//         http.Error(w, "Failed to index document", http.StatusInternalServerError)
-//         return
-//     }
-
-//     w.WriteHeader(http.StatusOK)
-//     w.Write([]byte("Report indexed successfully"))
-// }
-
-
-
+// Function to create Elasticsearch client and log success/failure
 func createElasticsearchClient(endpoint, username, password string) (*elasticsearch.Client, error) {
     cfg := elasticsearch.Config{
         Addresses: []string{
@@ -78,24 +28,30 @@ func createElasticsearchClient(endpoint, username, password string) (*elasticsea
 
     es, err := elasticsearch.NewClient(cfg)
     if err != nil {
+        log.Printf("Error creating Elasticsearch client: %v", err)
         return nil, err
     }
 
     // Ping Elasticsearch to verify connection
     res, err := es.Ping()
     if err != nil || res.StatusCode != 200 {
-        return nil, fmt.Errorf("Failed to connect to Elasticsearch: %v", err)
+        log.Printf("Failed to connect to Elasticsearch: %v", err)
+        return nil, fmt.Errorf("failed to connect to Elasticsearch: %v", err)
     }
 
+    // Log successful connection
+    log.Println("Successfully connected to Elasticsearch")
     return es, nil
 }
 
+// Function to handle incoming vulnerability reports and log ingestion process
 func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch.Client) {
-    var report v1alpha1.VulnerabilityReport
+    var report map[string]interface{}
 
     // Read and validate the request body
     body, err := io.ReadAll(r.Body)
     if err != nil || len(body) == 0 {
+        log.Printf("Invalid request body: %v", err)
         http.Error(w, "Invalid request body", http.StatusBadRequest)
         return
     }
@@ -103,13 +59,18 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Decode JSON
     err = json.Unmarshal(body, &report)
     if err != nil {
+        log.Printf("Error decoding JSON: %v", err)
         http.Error(w, "Invalid JSON", http.StatusBadRequest)
         return
     }
 
+    // Log the ingestion of the report
+    log.Printf("Ingesting vulnerability report: %v", report)
+
     // Convert the report to JSON for Elasticsearch
     reportData, err := json.Marshal(report)
     if err != nil {
+        log.Printf("Failed to serialize report: %v", err)
         http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
         return
     }
@@ -117,22 +78,24 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Index the report in Elasticsearch
     req := esapi.IndexRequest{
         Index:      "trivy-vulnerabilities",
-        DocumentID: fmt.Sprintf("%s-%s", report.Namespace, report.Name),
+        DocumentID: fmt.Sprintf("%v", report["metadata"].(map[string]interface{})["name"]),
         Body:       bytes.NewReader(reportData),
         Refresh:    "true",
     }
 
     res, err := req.Do(context.Background(), es)
     if err != nil || res.IsError() {
+        log.Printf("Failed to index document in Elasticsearch: %v", err)
         http.Error(w, "Failed to index document", http.StatusInternalServerError)
         return
     }
 
+    // Log successful indexing
+    log.Println("Successfully pushed the vulnerability report to Elasticsearch")
+
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
-
-
 
 func main() {
     // Load Elasticsearch configuration from environment variables
@@ -149,10 +112,16 @@ func main() {
     // Create a new router
     r := mux.NewRouter()
 
-    // Use handleTrivyReport as the handler and pass the Elasticsearch client
+    // Pass Elasticsearch client to the webhook handler
     r.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
-        handleTrivyReport(w, r, es)
+        handleTrivyReport(w, r, es) // Pass the 'es' client here
     }).Methods("POST")
+
+    // Health check endpoint
+    r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("OK"))
+    })
 
     // Start the server
     srv := &http.Server{
@@ -162,15 +131,6 @@ func main() {
         ReadTimeout:  15 * time.Second,
     }
 
-    r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte("OK"))
-		if err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
-
-	}).Methods("GET")
-
-    fmt.Println("Server is listening on :8080")
+    log.Println("Server is listening on :8080")
     log.Fatal(srv.ListenAndServe())
 }
