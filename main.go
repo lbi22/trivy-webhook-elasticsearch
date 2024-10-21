@@ -95,7 +95,11 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
+    // Clean up invalid fields
+    removeInvalidFields(report)
+
     log.Printf("Ingesting report: %v", report)
+
 
     // Identify the report type by its 'kind'
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
@@ -252,10 +256,15 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
 
     res, err := req.Do(context.Background(), es)
     if err != nil || res.IsError() {
-        log.Printf("Failed to index document: %v", err)
+        if res != nil {
+            log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
+        } else {
+            log.Printf("Failed to index document in Elasticsearch: %v", err)
+        }
         http.Error(w, "Failed to index document", http.StatusInternalServerError)
         return
     }
+
 
     log.Println("Successfully pushed the report to Elasticsearch")
     w.WriteHeader(http.StatusOK)
