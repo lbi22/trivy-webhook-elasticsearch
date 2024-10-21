@@ -97,27 +97,6 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     log.Printf("Ingesting vulnerability report: %v", report)
 
-    // Check if the summary is present and validate the counts
-    summary, ok := report["report"].(map[string]interface{})["summary"].(map[string]interface{})
-    if !ok {
-        log.Println("Summary field is missing or not in the expected format")
-        http.Error(w, "Invalid report format", http.StatusBadRequest)
-        return
-    }
-
-    criticalCount := summary["criticalCount"].(float64)
-    highCount := summary["highCount"].(float64)
-    mediumCount := summary["mediumCount"].(float64)
-    lowCount := summary["lowCount"].(float64)
-
-    // Only proceed if at least one of the counts is greater than 0
-    if criticalCount == 0 && highCount == 0 && mediumCount == 0 && lowCount == 0 {
-        log.Println("All counts are zero; skipping Elasticsearch upload")
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte("Report contains no findings, skipping index"))
-        return
-    }
-
     // Clean up invalid fields
     removeInvalidFields(report)
 
@@ -131,10 +110,32 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     log.Printf("Serialized report data: %s", string(reportData))
 
+    // Defensive type assertion for operatorObject and metadata
+    operatorObject, ok := report["operatorObject"].(map[string]interface{})
+    if !ok {
+        log.Println("Error: operatorObject field is missing or not a map")
+        http.Error(w, "Invalid report format: missing operatorObject", http.StatusBadRequest)
+        return
+    }
+
+    metadata, ok := reportData["metadata"].(map[string]interface{})
+    if !ok {
+        log.Println("Error: metadata field is missing or not a map inside operatorObject")
+        http.Error(w, "Invalid report format: missing metadata", http.StatusBadRequest)
+        return
+    }
+
+    name, ok := metadata["name"].(string)
+    if !ok {
+        log.Println("Error: name field is missing or not a string")
+        http.Error(w, "Invalid report format: missing name", http.StatusBadRequest)
+        return
+    }
+
     // Index the report in Elasticsearch
     req := esapi.IndexRequest{
         Index:      "trivy-vulnerabilities",
-        DocumentID: fmt.Sprintf("%v", report["metadata"].(map[string]interface{})["name"]),
+        DocumentID: name, // Safe to use now
         Body:       bytes.NewReader(reportData),
         Refresh:    "true",
     }
@@ -143,7 +144,11 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     res, err := req.Do(context.Background(), es)
     if err != nil || res.IsError() {
-        log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
+        if res != nil {
+            log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
+        } else {
+            log.Printf("Failed to index document in Elasticsearch: %v", err)
+        }
         http.Error(w, "Failed to index document", http.StatusInternalServerError)
         return
     }
@@ -153,6 +158,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
+
 
 
 func main() {
