@@ -136,7 +136,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
         return
     }
 
-    log.Println("Resoource name is:", metadata["name"])
+    log.Println("Resource name is:", metadata["name"])
 
     // Extract report data
     reportData, ok := report["report"].(map[string]interface{})
@@ -157,6 +157,14 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
     if !ok {
         log.Println("Error: vulnerabilities field is missing or not a list")
         http.Error(w, "Invalid report format: missing vulnerabilities", http.StatusBadRequest)
+        return
+    }
+
+    // Check if the vulnerabilities list is empty
+    if len(vulnerabilities) == 0 {
+        log.Printf("No vulnerability found for %s", metadata["name"])
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(fmt.Sprintf("No vulnerability found for %s", metadata["name"])))
         return
     }
 
@@ -219,6 +227,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Vulnerability report processed successfully"))
 }
+
 
 
 
