@@ -134,11 +134,21 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
-    // Extract vulnerability counts
-    criticalCount := summary["criticalCount"].(float64)
-    highCount := summary["highCount"].(float64)
-    mediumCount := summary["mediumCount"].(float64)
-    lowCount := summary["lowCount"].(float64)
+    // Helper function to safely get counts from summary
+    getCount := func(field string) float64 {
+        if count, exists := summary[field]; exists {
+            if floatVal, ok := count.(float64); ok {
+                return floatVal
+            }
+        }
+        return 0.0 // Default to 0 if the field doesn't exist or is not a float64
+    }
+
+    // Extract vulnerability counts safely
+    criticalCount := getCount("criticalCount")
+    highCount := getCount("highCount")
+    mediumCount := getCount("mediumCount")
+    lowCount := getCount("lowCount")
 
     // If all counts are zero, skip uploading to Elasticsearch
     if criticalCount == 0 && highCount == 0 && mediumCount == 0 && lowCount == 0 {
@@ -187,6 +197,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
+
 
 
 
