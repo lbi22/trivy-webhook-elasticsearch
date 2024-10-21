@@ -97,19 +97,6 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     log.Printf("Ingesting vulnerability report: %v", report)
 
-    // Clean up invalid fields
-    removeInvalidFields(report)
-
-    // Convert the report to JSON for Elasticsearch
-    reportData, err := json.Marshal(report)
-    if err != nil {
-        log.Printf("Failed to serialize report: %v", err)
-        http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
-        return
-    }
-
-    log.Printf("Serialized report data: %s", string(reportData))
-
     // Defensive type assertion for operatorObject and metadata
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
@@ -118,7 +105,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
-    metadata, ok := reportData["metadata"].(map[string]interface{})
+    metadata, ok := operatorObject["metadata"].(map[string]interface{})
     if !ok {
         log.Println("Error: metadata field is missing or not a map inside operatorObject")
         http.Error(w, "Invalid report format: missing metadata", http.StatusBadRequest)
@@ -132,11 +119,53 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
+    // Check if the summary is present and contains the counts
+    reportData, ok := report["report"].(map[string]interface{})
+    if !ok {
+        log.Println("Error: report field is missing or not a map")
+        http.Error(w, "Invalid report format: missing report data", http.StatusBadRequest)
+        return
+    }
+
+    summary, ok := reportData["summary"].(map[string]interface{})
+    if !ok {
+        log.Println("Error: summary field is missing or not a map")
+        http.Error(w, "Invalid report format: missing summary data", http.StatusBadRequest)
+        return
+    }
+
+    // Extract vulnerability counts
+    criticalCount := summary["criticalCount"].(float64)
+    highCount := summary["highCount"].(float64)
+    mediumCount := summary["mediumCount"].(float64)
+    lowCount := summary["lowCount"].(float64)
+
+    // If all counts are zero, skip uploading to Elasticsearch
+    if criticalCount == 0 && highCount == 0 && mediumCount == 0 && lowCount == 0 {
+        log.Println("All counts are zero; skipping Elasticsearch upload")
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("Report contains no findings, skipping index"))
+        return
+    }
+
+    // Clean up invalid fields
+    removeInvalidFields(report)
+
+    // Convert the report to JSON for Elasticsearch
+    reportDataBytes, err := json.Marshal(report)
+    if err != nil {
+        log.Printf("Failed to serialize report: %v", err)
+        http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
+        return
+    }
+
+    log.Printf("Serialized report data: %s", string(reportDataBytes))
+
     // Index the report in Elasticsearch
     req := esapi.IndexRequest{
         Index:      "trivy-vulnerabilities",
         DocumentID: name, // Safe to use now
-        Body:       bytes.NewReader(reportData),
+        Body:       bytes.NewReader(reportDataBytes),
         Refresh:    "true",
     }
 
@@ -158,6 +187,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
+
 
 
 
