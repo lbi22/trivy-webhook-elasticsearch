@@ -137,11 +137,6 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
         return
     }
 
-    // Extract key fields
-    name := metadata["name"].(string)
-    namespace := metadata["namespace"].(string)
-    creationTimestamp := metadata["creationTimestamp"].(string)
-
     // Extract report data
     reportData, ok := report["report"].(map[string]interface{})
     if !ok {
@@ -172,10 +167,8 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
         if severity, ok := vulnMap["severity"].(string); ok && severity == "CRITICAL" {
             // Build the formatted report for this vulnerability
             formattedVulnReport := map[string]interface{}{
-                "report_name":      name,
                 "kind":             "VulnerabilityReport",
-                "namespace":        namespace,
-                "creationTimestamp": creationTimestamp,
+                "metadata":         metadata, // Include full metadata
                 "artifact":         artifact,
                 "os":               os,
                 "scanner":          scanner,
@@ -192,7 +185,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
             }
 
             // Use a unique DocumentID for each vulnerability (combining report name and vulnerability ID)
-            documentID := fmt.Sprintf("%s-%s", name, vulnMap["vulnerabilityID"])
+            documentID := fmt.Sprintf("%s-%s", metadata["name"], vulnMap["vulnerabilityID"])
 
             // Index the report in Elasticsearch
             req := esapi.IndexRequest{
@@ -225,6 +218,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Vulnerability report processed successfully"))
 }
+
 
 
 // Helper function to format a single vulnerability
