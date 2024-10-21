@@ -95,9 +95,9 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
-    log.Printf("Ingesting vulnerability report: %v", report)
+    log.Printf("Ingesting report: %v", report)
 
-    // Defensive type assertion for operatorObject and metadata
+    // Identify the report type by its 'kind'
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
         log.Println("Error: operatorObject field is missing or not a map")
@@ -105,101 +105,162 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
-    metadata, ok := operatorObject["metadata"].(map[string]interface{})
+    kind, ok := operatorObject["kind"].(string)
+    if !ok {
+        log.Println("Error: kind field is missing or not a string")
+        http.Error(w, "Invalid report format: missing kind", http.StatusBadRequest)
+        return
+    }
+
+    // Special handling for VulnerabilityReport
+    if kind == "VulnerabilityReport" {
+        handleVulnerabilityReport(w, operatorObject, es)
+        return
+    }
+
+    // Handle other report types (unchanged behavior)
+    log.Println("Processing report of other kind, keeping the existing format.")
+    handleOtherReportTypes(w, operatorObject, es)
+}
+
+func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client) {
+    // Extract metadata
+    metadata, ok := report["metadata"].(map[string]interface{})
     if !ok {
         log.Println("Error: metadata field is missing or not a map inside operatorObject")
         http.Error(w, "Invalid report format: missing metadata", http.StatusBadRequest)
         return
     }
 
-    name, ok := metadata["name"].(string)
-    if !ok {
-        log.Println("Error: name field is missing or not a string")
-        http.Error(w, "Invalid report format: missing name", http.StatusBadRequest)
-        return
-    }
+    // Extract key fields
+    name := metadata["name"].(string)
+    namespace := metadata["namespace"].(string)
+    creationTimestamp := metadata["creationTimestamp"].(string)
 
-    // Check if the summary is present and contains the counts
-    reportData, ok := operatorObject["report"].(map[string]interface{})
+    // Extract report data
+    reportData, ok := report["report"].(map[string]interface{})
     if !ok {
         log.Println("Error: report field is missing or not a map")
         http.Error(w, "Invalid report format: missing report data", http.StatusBadRequest)
         return
     }
 
-    summary, ok := reportData["summary"].(map[string]interface{})
+    // Extract artifact, os, scanner, and summary fields
+    artifact := reportData["artifact"].(map[string]interface{})
+    os := reportData["os"].(map[string]interface{})
+    scanner := reportData["scanner"].(map[string]interface{})
+    summary := reportData["summary"].(map[string]interface{})
+
+    // Extract vulnerabilities
+    vulnerabilities, ok := reportData["vulnerabilities"].([]interface{})
     if !ok {
-        log.Println("Error: summary field is missing or not a map")
-        http.Error(w, "Invalid report format: missing summary data", http.StatusBadRequest)
+        log.Println("Error: vulnerabilities field is missing or not a list")
+        http.Error(w, "Invalid report format: missing vulnerabilities", http.StatusBadRequest)
         return
     }
 
-    // Helper function to safely get counts from summary
-    getCount := func(field string) float64 {
-        if count, exists := summary[field]; exists {
-            if floatVal, ok := count.(float64); ok {
-                return floatVal
+    // Ingest each critical vulnerability as a separate document
+    for _, vuln := range vulnerabilities {
+        vulnMap := vuln.(map[string]interface{})
+        
+        // Check if the vulnerability has a "CRITICAL" severity
+        if severity, ok := vulnMap["severity"].(string); ok && severity == "CRITICAL" {
+            // Build the formatted report for this vulnerability
+            formattedVulnReport := map[string]interface{}{
+                "report_name":      name,
+                "namespace":        namespace,
+                "creationTimestamp": creationTimestamp,
+                "artifact":         artifact,
+                "os":               os,
+                "scanner":          scanner,
+                "summary":          summary, // Optional, keep summary if needed
+                "vulnerability":    formatVulnerability(vulnMap), // Only this specific vulnerability
             }
+
+            // Convert the formatted report to JSON for Elasticsearch
+            reportDataBytes, err := json.Marshal(formattedVulnReport)
+            if err != nil {
+                log.Printf("Failed to serialize formatted report: %v", err)
+                http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
+                return
+            }
+
+            // Use a unique DocumentID for each vulnerability (combining report name and vulnerability ID)
+            documentID := fmt.Sprintf("%s-%s", name, vulnMap["vulnerabilityID"])
+
+            // Index the report in Elasticsearch
+            req := esapi.IndexRequest{
+                Index:      "trivy-vulnerabilities",
+                DocumentID: documentID, // Unique ID for each vulnerability
+                Body:       bytes.NewReader(reportDataBytes),
+                Refresh:    "true",
+            }
+
+            log.Printf("Indexing critical vulnerability: %s", vulnMap["vulnerabilityID"])
+
+            res, err := req.Do(context.Background(), es)
+            if err != nil || res.IsError() {
+                if res != nil {
+                    log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
+                } else {
+                    log.Printf("Failed to index document in Elasticsearch: %v", err)
+                }
+                http.Error(w, "Failed to index document", http.StatusInternalServerError)
+                return
+            }
+
+            log.Printf("Successfully pushed critical vulnerability %s to Elasticsearch", vulnMap["vulnerabilityID"])
         }
-        return 0.0 // Default to 0 if the field doesn't exist or is not a float64
     }
 
-    // Extract vulnerability counts safely
-    criticalCount := getCount("criticalCount")
-    highCount := getCount("highCount")
-    mediumCount := getCount("mediumCount")
-    lowCount := getCount("lowCount")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Vulnerability report processed successfully"))
+}
 
-    // If all counts are zero, skip uploading to Elasticsearch
-    if criticalCount == 0 && highCount == 0 && mediumCount == 0 && lowCount == 0 {
-        log.Println("All counts are zero; skipping Elasticsearch upload")
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte("Report contains no findings, skipping index"))
-        return
+// Helper function to format a single vulnerability
+func formatVulnerability(vuln map[string]interface{}) map[string]interface{} {
+    return map[string]interface{}{
+        "vulnerabilityID":   vuln["vulnerabilityID"],
+        "resource":          vuln["resource"],
+        "installedVersion":  vuln["installedVersion"],
+        "fixedVersion":      vuln["fixedVersion"],
+        "severity":          vuln["severity"],
+        "score":             vuln["score"],
+        "title":             vuln["title"],
+        "publishedDate":     vuln["publishedDate"],
+        "lastModifiedDate":  vuln["lastModifiedDate"],
     }
+}
 
-    // Clean up invalid fields
-    removeInvalidFields(report)
-
-    // Convert the report to JSON for Elasticsearch
-    reportDataBytes, err := json.Marshal(operatorObject)
+func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client) {
+    // Your existing logic for processing non-VulnerabilityReport types
+    reportDataBytes, err := json.Marshal(report)
     if err != nil {
         log.Printf("Failed to serialize report: %v", err)
         http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
         return
     }
 
-    log.Printf("Serialized report data: %s", string(reportDataBytes))
+    name, _ := report["metadata"].(map[string]interface{})["name"].(string)
 
-    // Index the report in Elasticsearch
     req := esapi.IndexRequest{
-        Index:      "trivy-vulnerabilities",
-        DocumentID: name, // Safe to use now
+        Index:      "trivy-reports",
+        DocumentID: name,
         Body:       bytes.NewReader(reportDataBytes),
         Refresh:    "true",
     }
 
-    log.Println("Attempting to index the report into Elasticsearch")
-
     res, err := req.Do(context.Background(), es)
     if err != nil || res.IsError() {
-        if res != nil {
-            log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
-        } else {
-            log.Printf("Failed to index document in Elasticsearch: %v", err)
-        }
+        log.Printf("Failed to index document: %v", err)
         http.Error(w, "Failed to index document", http.StatusInternalServerError)
         return
     }
 
-    log.Println("Successfully pushed the vulnerability report to Elasticsearch")
-
+    log.Println("Successfully pushed the report to Elasticsearch")
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
-
-
-
 
 
 func main() {
