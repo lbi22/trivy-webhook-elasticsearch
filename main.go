@@ -110,10 +110,25 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     log.Printf("Serialized report data: %s", string(reportData))
 
+    // Defensive type assertion for metadata and name
+    metadata, ok := report["metadata"].(map[string]interface{})
+    if !ok {
+        log.Println("Error: metadata field is missing or not a map")
+        http.Error(w, "Invalid report format: missing metadata", http.StatusBadRequest)
+        return
+    }
+
+    name, ok := metadata["name"].(string)
+    if !ok {
+        log.Println("Error: name field is missing or not a string")
+        http.Error(w, "Invalid report format: missing name", http.StatusBadRequest)
+        return
+    }
+
     // Index the report in Elasticsearch
     req := esapi.IndexRequest{
         Index:      "trivy-vulnerabilities",
-        DocumentID: fmt.Sprintf("%v", report["metadata"].(map[string]interface{})["name"]),
+        DocumentID: name, // Safe to use now
         Body:       bytes.NewReader(reportData),
         Refresh:    "true",
     }
@@ -122,7 +137,11 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     res, err := req.Do(context.Background(), es)
     if err != nil || res.IsError() {
-        log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
+        if res != nil {
+            log.Printf("Failed to index document in Elasticsearch. Status Code: %d, Response: %s", res.StatusCode, res.String())
+        } else {
+            log.Printf("Failed to index document in Elasticsearch: %v", err)
+        }
         http.Error(w, "Failed to index document", http.StatusInternalServerError)
         return
     }
