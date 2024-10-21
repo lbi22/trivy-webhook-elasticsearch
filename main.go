@@ -120,7 +120,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     }
 
     // Check if the summary is present and contains the counts
-    reportData, ok := report["report"].(map[string]interface{})
+    reportData, ok := operatorObject["report"].(map[string]interface{})
     if !ok {
         log.Println("Error: report field is missing or not a map")
         http.Error(w, "Invalid report format: missing report data", http.StatusBadRequest)
