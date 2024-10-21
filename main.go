@@ -98,9 +98,6 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Clean up invalid fields
     removeInvalidFields(report)
 
-    log.Printf("Ingesting report: %v", report)
-
-
     // Identify the report type by its 'kind'
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
@@ -115,6 +112,8 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         http.Error(w, "Invalid report format: missing kind", http.StatusBadRequest)
         return
     }
+
+    log.Println("Ingesting report of kind:", kind)
 
     // Special handling for VulnerabilityReport
     if kind == "VulnerabilityReport" {
@@ -136,6 +135,10 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
         http.Error(w, "Invalid report format: missing metadata", http.StatusBadRequest)
         return
     }
+
+    name, _ := metadata.(map[string]interface{})["name"].(string)
+
+    log.Println("Resoource name is:", name)
 
     // Extract report data
     reportData, ok := report["report"].(map[string]interface{})
@@ -247,6 +250,8 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
 
     name, _ := report["metadata"].(map[string]interface{})["name"].(string)
 
+    log.Println("Resoource name is:", name)
+
     req := esapi.IndexRequest{
         Index:      "trivy-reports",
         DocumentID: name,
@@ -266,9 +271,9 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
     }
 
 
-    // log.Println("Successfully pushed the report to Elasticsearch")
+    log.Println("Successfully pushed the report to Elasticsearch")
     w.WriteHeader(http.StatusOK)
-    // w.Write([]byte("Report indexed successfully"))
+    w.Write([]byte("Report indexed successfully"))
 }
 
 
