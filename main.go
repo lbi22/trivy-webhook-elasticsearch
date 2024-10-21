@@ -136,15 +136,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
         return
     }
 
-    // Extract name data
-    name, ok := metadata["name"].(map[string]interface{})
-    if !ok {
-        log.Println("Error: report field is missing or not a map")
-        http.Error(w, "Invalid report format: missing report data", http.StatusBadRequest)
-        return
-    }
-
-    log.Println("Resoource name is:", name)
+    log.Println("Resoource name is:", metadata["name"])
 
     // Extract report data
     reportData, ok := report["report"].(map[string]interface{})
