@@ -118,12 +118,13 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     // Special handling for VulnerabilityReport
     if kind == "VulnerabilityReport" {
+        log.Println("Processing vulnerability report.")
         handleVulnerabilityReport(w, operatorObject, es)
         return
     }
 
     // Handle other report types (unchanged behavior)
-    log.Println("Processing report of other kind, keeping the existing format.")
+    // log.Println("Processing report of other kind, keeping the existing format.")
     handleOtherReportTypes(w, operatorObject, es)
 }
 
@@ -172,6 +173,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
             // Build the formatted report for this vulnerability
             formattedVulnReport := map[string]interface{}{
                 "report_name":      name,
+                "kind":             "VulnerabilityReport",
                 "namespace":        namespace,
                 "creationTimestamp": creationTimestamp,
                 "artifact":         artifact,
@@ -213,6 +215,9 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
                 return
             }
 
+            // Log the full response from Elasticsearch
+            log.Printf("Elasticsearch Response: %s", res.String())
+
             log.Printf("Successfully pushed critical vulnerability %s to Elasticsearch", vulnMap["vulnerabilityID"])
         }
     }
@@ -220,6 +225,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Vulnerability report processed successfully"))
 }
+
 
 // Helper function to format a single vulnerability
 func formatVulnerability(vuln map[string]interface{}) map[string]interface{} {
@@ -266,9 +272,9 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
     }
 
 
-    log.Println("Successfully pushed the report to Elasticsearch")
+    // log.Println("Successfully pushed the report to Elasticsearch")
     w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Report indexed successfully"))
+    // w.Write([]byte("Report indexed successfully"))
 }
 
 
