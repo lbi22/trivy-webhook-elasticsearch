@@ -110,10 +110,17 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     log.Printf("Serialized report data: %s", string(reportData))
 
-    // Defensive type assertion for metadata and name
-    metadata, ok := report["metadata"].(map[string]interface{})
+    // Defensive type assertion for operatorObject and metadata
+    operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
-        log.Println("Error: metadata field is missing or not a map")
+        log.Println("Error: operatorObject field is missing or not a map")
+        http.Error(w, "Invalid report format: missing operatorObject", http.StatusBadRequest)
+        return
+    }
+
+    metadata, ok := operatorObject["metadata"].(map[string]interface{})
+    if !ok {
+        log.Println("Error: metadata field is missing or not a map inside operatorObject")
         http.Error(w, "Invalid report format: missing metadata", http.StatusBadRequest)
         return
     }
@@ -151,6 +158,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
+
 
 
 func main() {
