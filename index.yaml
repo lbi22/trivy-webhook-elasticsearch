@@ -2,6 +2,19 @@ apiVersion: v1
 entries:
   trivy-webhook-elasticsearch:
   - apiVersion: v2
+    appVersion: v0.0.24
+    created: "2024-10-21T19:54:47.58854424Z"
+    description: A Helm chart for Kubernetes
+    digest: cbb49cafa68ccd8988e39060c9e91baa416c6215a0248bef2f5b22027e826f1f
+    home: https://github.com/lbi22/trivy-webhook-elasticsearch
+    name: trivy-webhook-elasticsearch
+    sources:
+    - https://github.com/lbi22/trivy-webhook-elasticsearch/tree/main/charts/trivy-webhook-elasticsearch
+    type: application
+    urls:
+    - https://github.com/lbi22/trivy-webhook-elasticsearch/releases/download/trivy-webhook-elasticsearch-0.0.24/trivy-webhook-elasticsearch-0.0.24.tgz
+    version: 0.0.24
+  - apiVersion: v2
     appVersion: v0.0.23
     created: "2024-10-21T15:14:51.091449205Z"
     description: A Helm chart for Kubernetes
@@ -274,4 +287,4 @@ entries:
     urls:
     - https://github.com/lbi22/trivy-webhook-elasticsearch/releases/download/trivy-webhook-elasticsearch-0.0.2/trivy-webhook-elasticsearch-0.0.2.tgz
     version: 0.0.2
-generated: "2024-10-21T15:14:51.091615808Z"
+generated: "2024-10-21T19:54:47.588722365Z"
