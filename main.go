@@ -162,7 +162,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     removeInvalidFields(report)
 
     // Convert the report to JSON for Elasticsearch
-    reportDataBytes, err := json.Marshal(report)
+    reportDataBytes, err := json.Marshal(operatorObject)
     if err != nil {
         log.Printf("Failed to serialize report: %v", err)
         http.Error(w, "Failed to serialize report", http.StatusInternalServerError)
