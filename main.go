@@ -44,6 +44,15 @@ func createElasticsearchClient(endpoint, username, password string) (*elasticsea
     return es, nil
 }
 
+
+// Function to process and remove metadata.managedFields
+func cleanMetadata(report map[string]interface{}) {
+    if _, exists := report["metadata"].(map[string]interface{})["managedFields"]; exists {
+        delete(report["metadata"].(map[string]interface{}), "managedFields")
+    }
+}
+
+
 // Remove invalid fields with only dots (".") from the report recursively
 func removeInvalidFields(data interface{}) {
     switch v := data.(type) {
@@ -117,6 +126,8 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         return
     }
 
+    cleanMetadata(operatorObject) 
+
     // Example of using the fields in handleVulnerabilityReport
     for field, value := range fieldsToPush {
         log.Printf("Processing field: %s with value: %v", field, value)
@@ -154,6 +165,8 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 }
 
 func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client, verb string) {
+
+
     // Extract metadata
     metadata, ok := report["metadata"].(map[string]interface{})
     if !ok {
