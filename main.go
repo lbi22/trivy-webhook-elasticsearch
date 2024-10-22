@@ -98,9 +98,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Clean up invalid fields
     removeInvalidFields(report)
 
-    print(report)
-    print(report["verb"])
-
+    
     // Identify the report type by its 'kind'
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
@@ -118,19 +116,22 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     log.Println("Ingesting report of kind:", kind)
 
+    verb = report["verb"]
+    log.Println("Report verb:", verb)
+
     // Special handling for VulnerabilityReport
     if kind == "VulnerabilityReport" {
         log.Println("Processing vulnerability report.")
-        handleVulnerabilityReport(w, operatorObject, es)
+        handleVulnerabilityReport(w, operatorObject, es, verb)
         return
     }
 
     // Handle other report types (unchanged behavior)
     // log.Println("Processing report of other kind, keeping the existing format.")
-    handleOtherReportTypes(w, operatorObject, es)
+    handleOtherReportTypes(w, operatorObject, es, verb)
 }
 
-func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client) {
+func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client, verb string) {
     // Extract metadata
     metadata, ok := report["metadata"].(map[string]interface{})
     if !ok {
@@ -177,6 +178,12 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
         
         // Check if the vulnerability has a "CRITICAL" severity
         if severity, ok := vulnMap["severity"].(string); ok && severity == "CRITICAL" {
+            // Add the deleted flag
+            reportDeleted := false
+            if verb == "delete" {
+                reportDeleted = true
+            }
+
             // Build the formatted report for this vulnerability
             formattedVulnReport := map[string]interface{}{
                 "kind":             "VulnerabilityReport",
@@ -186,6 +193,9 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
                 "scanner":          scanner,
                 "summary":          summary, // Optional, keep summary if needed
                 "vulnerability":    formatVulnerability(vulnMap), // Only this specific vulnerability
+                "report": map[string]interface{}{
+                    "deleted": reportDeleted, // Add the deleted flag
+                },
             }
 
             // Convert the formatted report to JSON for Elasticsearch
@@ -200,14 +210,25 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
             documentID := fmt.Sprintf("%s-%s", metadata["name"], vulnMap["vulnerabilityID"])
 
             // Index the report in Elasticsearch
-            req := esapi.IndexRequest{
-                Index:      "trivy-vulnerabilities",
-                DocumentID: documentID, // Unique ID for each vulnerability
-                Body:       bytes.NewReader(reportDataBytes),
-                Refresh:    "true",
+            var req esapi.Request
+            if verb == "delete" {
+                // Update document if it's a delete request
+                req = esapi.UpdateRequest{
+                    Index:      "trivy-vulnerabilities",
+                    DocumentID: documentID, // Unique ID for each vulnerability
+                    Body:       bytes.NewReader(reportDataBytes),
+                    Refresh:    "true",
+                }
+                log.Printf("Flagging document as deleted")
+            } else {
+                req = esapi.IndexRequest{
+                    Index:      "trivy-vulnerabilities",
+                    DocumentID: documentID, // Unique ID for each vulnerability
+                    Body:       bytes.NewReader(reportDataBytes),
+                    Refresh:    "true",
+                }
+                log.Printf("Indexing critical vulnerability: %s", vulnMap["vulnerabilityID"])
             }
-
-            log.Printf("Indexing critical vulnerability: %s", vulnMap["vulnerabilityID"])
 
             res, err := req.Do(context.Background(), es)
             if err != nil || res.IsError() {
@@ -220,10 +241,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
                 return
             }
 
-            // Log the full response from Elasticsearch
-            log.Printf("Elasticsearch Response: %s", res.String())
-
-            log.Printf("Successfully pushed critical vulnerability %s to Elasticsearch", vulnMap["vulnerabilityID"])
+            log.Printf("Successfully processed critical vulnerability %s", vulnMap["vulnerabilityID"])
         }
     }
 
@@ -249,7 +267,7 @@ func formatVulnerability(vuln map[string]interface{}) map[string]interface{} {
     }
 }
 
-func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client) {
+func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client, verb string) {
     // Your existing logic for processing non-VulnerabilityReport types
     reportDataBytes, err := json.Marshal(report)
     if err != nil {
@@ -260,13 +278,35 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
 
     name, _ := report["metadata"].(map[string]interface{})["name"].(string)
 
-    log.Println("Resoource name is:", name)
+    log.Println("Resource name is:", name)
 
-    req := esapi.IndexRequest{
-        Index:      "trivy-reports",
-        DocumentID: name,
-        Body:       bytes.NewReader(reportDataBytes),
-        Refresh:    "true",
+    // Add the deleted flag
+    reportDeleted := false
+    if verb == "delete" {
+        reportDeleted = true
+    }
+
+    // Modify the report to include the deleted flag
+    report["report"] = map[string]interface{}{
+        "deleted": reportDeleted,
+    }
+
+    if verb == "delete" {
+        req := esapi.UpdateRequest{
+            Index:      "trivy-reports",
+            DocumentID: name,
+            Body:       bytes.NewReader(reportDataBytes),
+            Refresh:    "true",
+        }
+        log.Printf("Flagging document as deleted for report: %s", name)
+    } else {
+        req := esapi.IndexRequest{
+            Index:      "trivy-reports",
+            DocumentID: name,
+            Body:       bytes.NewReader(reportDataBytes),
+            Refresh:    "true",
+        }
+        log.Printf("Indexing non-vulnerability report: %s", name)
     }
 
     res, err := req.Do(context.Background(), es)
@@ -280,11 +320,11 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
         return
     }
 
-
     log.Println("Successfully pushed the report to Elasticsearch")
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Report indexed successfully"))
 }
+
 
 
 func main() {
