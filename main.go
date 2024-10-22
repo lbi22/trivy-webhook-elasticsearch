@@ -219,7 +219,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
                 req = esapi.UpdateRequest{
                     Index:      "trivy-vulnerabilities",
                     DocumentID: documentID, // Unique ID for each vulnerability
-                    Body:       bytes.NewReader(reportDataBytes),
+                    Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"doc":%s}`, reportDataBytes))),
                     Refresh:    "true",
                 }
                 log.Printf("Flagging document as deleted")
@@ -287,7 +287,7 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
         req = esapi.UpdateRequest{
             Index:      "trivy-reports",
             DocumentID: name,
-            Body:       bytes.NewReader(reportDataBytes),
+            Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"doc":%s}`, reportDataBytes))),
             Refresh:    "true",
         }
         log.Printf("Flagging document as deleted for report: %s", name)
