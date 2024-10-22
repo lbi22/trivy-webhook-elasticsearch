@@ -98,6 +98,9 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Clean up invalid fields
     removeInvalidFields(report)
 
+    print(report)
+    print(report["verb"])
+
     // Identify the report type by its 'kind'
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
