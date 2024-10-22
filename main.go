@@ -98,7 +98,6 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Clean up invalid fields
     removeInvalidFields(report)
 
-    
     // Identify the report type by its 'kind'
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
@@ -116,7 +115,12 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     log.Println("Ingesting report of kind:", kind)
 
-    verb = report["verb"]
+    // Extract verb from report (ensure it's declared)
+    verb, ok := report["verb"].(string)
+    if !ok {
+        log.Println("Verb field is missing, setting to default 'create'")
+        verb = "create"  // Default to "create" if "verb" is missing
+    }
     log.Println("Report verb:", verb)
 
     // Special handling for VulnerabilityReport
@@ -127,7 +131,6 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     }
 
     // Handle other report types (unchanged behavior)
-    // log.Println("Processing report of other kind, keeping the existing format.")
     handleOtherReportTypes(w, operatorObject, es, verb)
 }
 
@@ -268,7 +271,6 @@ func formatVulnerability(vuln map[string]interface{}) map[string]interface{} {
 }
 
 func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client, verb string) {
-    // Your existing logic for processing non-VulnerabilityReport types
     reportDataBytes, err := json.Marshal(report)
     if err != nil {
         log.Printf("Failed to serialize report: %v", err)
@@ -277,22 +279,12 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
     }
 
     name, _ := report["metadata"].(map[string]interface{})["name"].(string)
-
     log.Println("Resource name is:", name)
 
-    // Add the deleted flag
-    reportDeleted := false
-    if verb == "delete" {
-        reportDeleted = true
-    }
-
-    // Modify the report to include the deleted flag
-    report["report"] = map[string]interface{}{
-        "deleted": reportDeleted,
-    }
+    var req esapi.Request  // Declare req variable in the outer scope
 
     if verb == "delete" {
-        req := esapi.UpdateRequest{
+        req = esapi.UpdateRequest{
             Index:      "trivy-reports",
             DocumentID: name,
             Body:       bytes.NewReader(reportDataBytes),
@@ -300,7 +292,7 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
         }
         log.Printf("Flagging document as deleted for report: %s", name)
     } else {
-        req := esapi.IndexRequest{
+        req = esapi.IndexRequest{
             Index:      "trivy-reports",
             DocumentID: name,
             Body:       bytes.NewReader(reportDataBytes),
