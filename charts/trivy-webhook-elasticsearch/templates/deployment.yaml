@@ -53,8 +53,10 @@ spec:
               value: {{ .Values.elasticsearch.username | quote }}
             - name: ELASTICSEARCH_PASSWORD
               value: {{ .Values.elasticsearch.password | quote }}
+            {{- if not .Values.elasticSearch.fieldsToPush }}
             - name: ELASTIC_FIELDS_TO_PUSH
               value: '{{ .Values.elasticSearch.fieldsToPush | toJson }}'
+            {{- end }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
