@@ -45,14 +45,6 @@ func createElasticsearchClient(endpoint, username, password string) (*elasticsea
 }
 
 
-// Function to process and remove metadata.managedFields
-func cleanMetadata(report map[string]interface{}) {
-    if _, exists := report["metadata"].(map[string]interface{})["managedFields"]; exists {
-        delete(report["metadata"].(map[string]interface{}), "managedFields")
-    }
-}
-
-
 // Remove invalid fields with only dots (".") from the report recursively
 func removeInvalidFields(data interface{}) {
     switch v := data.(type) {
@@ -125,8 +117,6 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         http.Error(w, "Invalid report format: missing operatorObject", http.StatusBadRequest)
         return
     }
-
-    cleanMetadata(operatorObject) 
 
     // Example of using the fields in handleVulnerabilityReport
     for field, value := range fieldsToPush {
