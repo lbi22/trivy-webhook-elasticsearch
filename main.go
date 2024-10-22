@@ -98,12 +98,31 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Clean up invalid fields
     removeInvalidFields(report)
 
+    // In the createElasticsearchClient or other appropriate function:
+    fieldsToPushJson := os.Getenv("ELASTIC_FIELDS_TO_PUSH")
+
+    // Declare a map to hold field-value pairs
+    fieldsToPush := make(map[string]interface{})
+
+    // Parse the JSON string into a map
+    if err := json.Unmarshal([]byte(fieldsToPushJson), &fieldsToPush); err != nil {
+        log.Fatalf("Error parsing ELASTIC_FIELDS_TO_PUSH: %v", err)
+    }
+
     // Identify the report type by its 'kind'
     operatorObject, ok := report["operatorObject"].(map[string]interface{})
     if !ok {
         log.Println("Error: operatorObject field is missing or not a map")
         http.Error(w, "Invalid report format: missing operatorObject", http.StatusBadRequest)
         return
+    }
+
+    // Example of using the fields in handleVulnerabilityReport
+    for field, value := range fieldsToPush {
+        log.Printf("Processing field: %s with value: %v", field, value)
+
+        // Add the field and value to the report data for Elasticsearch
+        operatorObject[field] = value
     }
 
     kind, ok := operatorObject["kind"].(string)
@@ -271,6 +290,18 @@ func formatVulnerability(vuln map[string]interface{}) map[string]interface{} {
 }
 
 func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client, verb string) {
+    // Add "report.deleted" based on the verb
+    reportDeleted := false
+    if verb == "delete" {
+        reportDeleted = true
+    }
+    
+    // Add or modify the "report" field to include "deleted"
+    report["report"] = map[string]interface{}{
+        "deleted": reportDeleted,
+    }
+
+    // Serialize the modified report
     reportDataBytes, err := json.Marshal(report)
     if err != nil {
         log.Printf("Failed to serialize report: %v", err)
@@ -278,11 +309,13 @@ func handleOtherReportTypes(w http.ResponseWriter, report map[string]interface{}
         return
     }
 
+    // Get the report name
     name, _ := report["metadata"].(map[string]interface{})["name"].(string)
     log.Println("Resource name is:", name)
 
-    var req esapi.Request  // Declare req variable in the outer scope
+    var req esapi.Request
 
+    // Handle "delete" or "index" requests
     if verb == "delete" {
         req = esapi.UpdateRequest{
             Index:      "trivy-reports",
