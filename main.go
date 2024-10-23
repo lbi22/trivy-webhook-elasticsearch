@@ -146,7 +146,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     // Special handling for VulnerabilityReport
     if kind == "VulnerabilityReport" {
         log.Println("Processing vulnerability report.")
-        handleVulnerabilityReport(w, operatorObject, es, verb)
+        handleVulnerabilityReport(w, operatorObject, es, verb, fieldsToPush)
         return
     }
 
@@ -154,9 +154,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
     handleOtherReportTypes(w, operatorObject, es, verb)
 }
 
-func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client, verb string) {
-
-
+func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interface{}, es *elasticsearch.Client, verb string, fieldsToPush map[string]interface{}) {
     // Extract metadata
     metadata, ok := report["metadata"].(map[string]interface{})
     if !ok {
@@ -223,6 +221,11 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
                 },
             }
 
+            // Apply fieldsToPush to the formattedVulnReport
+            for field, value := range fieldsToPush {
+                formattedVulnReport[field] = value
+            }
+
             // Convert the formatted report to JSON for Elasticsearch
             reportDataBytes, err := json.Marshal(formattedVulnReport)
             if err != nil {
@@ -273,6 +276,7 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("Vulnerability report processed successfully"))
 }
+
 
 
 
