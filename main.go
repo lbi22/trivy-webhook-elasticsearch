@@ -85,6 +85,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
         http.Error(w, "Invalid request body", http.StatusBadRequest)
         return
     }
+    log.Printf("Request body: %s", string(body))
 
     log.Println("Request body received successfully")
 
@@ -174,7 +175,11 @@ func handleVulnerabilityReport(w http.ResponseWriter, report map[string]interfac
     }
 
     // Extract artifact, os, scanner, and summary fields
-    artifact := reportData["artifact"].(map[string]interface{})
+    artifact, ok := reportData["artifact"].(map[string]interface{})
+    if !ok {
+        log.Println("Error: artifact field is missing or not a map")
+        // Handle error accordingly
+    }
     os := reportData["os"].(map[string]interface{})
     scanner := reportData["scanner"].(map[string]interface{})
     summary := reportData["summary"].(map[string]interface{})
