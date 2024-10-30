@@ -80,7 +80,7 @@ func handleTrivyReport(w http.ResponseWriter, r *http.Request, es *elasticsearch
 
     // Read and validate the request body
     body, err := io.ReadAll(r.Body)
-    if err != nil || len(bodyBytes) == 0 {
+    if err != nil || len(body) == 0 {
         log.Printf("Invalid request body or empty: %v", err)
         http.Error(w, "Invalid request body", http.StatusBadRequest)
         return
